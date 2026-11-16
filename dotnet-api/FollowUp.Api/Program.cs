@@ -12,6 +12,9 @@ var connectionString = ConnectionString(Environment.GetEnvironmentVariable("DATA
 var appPassword = Environment.GetEnvironmentVariable("APP_PASSWORD") ?? "";
 var appUsername = Environment.GetEnvironmentVariable("APP_USERNAME") ?? "admin";
 var frontendOrigin = Environment.GetEnvironmentVariable("FRONTEND_ORIGIN") ?? "http://localhost:5173";
+var attendanceStartDate = DateOnly.TryParse(Environment.GetEnvironmentVariable("ATTENDANCE_START_DATE"), out var configuredAttendanceStart)
+    ? configuredAttendanceStart
+    : new DateOnly(2026, 11, 20);
 if (string.IsNullOrWhiteSpace(connectionString)) throw new InvalidOperationException("Set DATABASE_URL before starting the API.");
 if (string.IsNullOrWhiteSpace(appPassword)) throw new InvalidOperationException("Set APP_PASSWORD before starting the API.");
 
@@ -75,7 +78,7 @@ app.MapGet("/api/health", async (NpgsqlDataSource db) =>
 
 app.MapGet("/api/public/qr/{token}", async (string token, NpgsqlDataSource db) =>
 {
-    var attendanceStart = new DateOnly(2026, 10, 2);
+    var attendanceStart = attendanceStartDate;
     var attendanceThrough = CairoToday();
     await using var connection = await db.OpenConnectionAsync();
     await using var personCommand = new NpgsqlCommand("select id,record_key,name,group_number,photo_url from people where qr_token=$1 and is_active=true and role='boy'", connection);
@@ -163,26 +166,6 @@ app.MapGet("/api/public/people", async (string? query, NpgsqlDataSource db) =>
     return Results.Ok(people);
 });
 
-app.MapGet("/api/public/learning-items", async (NpgsqlDataSource db) =>
-{
-    await using var connection = await db.OpenConnectionAsync();
-    await using var command = new NpgsqlCommand("select id,lesson_date::text,category,title,resource_url,description,background_url,links::text from learning_items order by lesson_date desc,category,title,id", connection);
-    await using var reader = await command.ExecuteReaderAsync();
-    var items = new List<object>();
-    while (await reader.ReadAsync()) items.Add(new { id = reader.GetInt64(0), date = reader.GetString(1), category = reader.GetString(2), title = reader.GetString(3), url = reader.GetString(4), description = reader.GetString(5), backgroundUrl = reader.GetString(6), links = LearningLinks(reader.GetString(7), reader.GetString(4)) });
-    return Results.Ok(items);
-});
-
-app.MapGet("/api/public/books", async (NpgsqlDataSource db) =>
-{
-    await using var connection = await db.OpenConnectionAsync();
-    await using var command = new NpgsqlCommand("select id,title,resource_url,cover_url,description from library_books order by created_at desc,id desc", connection);
-    await using var reader = await command.ExecuteReaderAsync();
-    var books = new List<object>();
-    while (await reader.ReadAsync()) books.Add(new { id = reader.GetInt64(0), title = reader.GetString(1), url = reader.GetString(2), coverUrl = reader.GetString(3), description = reader.GetString(4) });
-    return Results.Ok(books);
-});
-
 app.MapGet("/api/public/mass-schedules", async (NpgsqlDataSource db) =>
 {
     await using var connection = await db.OpenConnectionAsync();
@@ -191,23 +174,6 @@ app.MapGet("/api/public/mass-schedules", async (NpgsqlDataSource db) =>
     var schedules = new List<object>();
     while (await reader.ReadAsync()) schedules.Add(new { id = reader.GetInt64(0), date = reader.GetString(1), time = reader.GetString(2), location = reader.GetString(3) });
     return Results.Ok(schedules);
-});
-
-app.MapGet("/api/public/notifications", async (string? token, NpgsqlDataSource db) =>
-{
-    await using var connection = await db.OpenConnectionAsync();
-    await using var command = new NpgsqlCommand(@"
-        select n.id,n.title,n.body,n.target_url,
-               to_char(n.created_at at time zone 'Africa/Cairo','YYYY-MM-DD'),
-               n.person_id is not null
-        from parent_notifications n
-        where n.person_id is null or n.person_id=(select id from people where qr_token=$1 and is_active=true and role='boy')
-        order by n.created_at desc,n.id desc limit 50", connection);
-    command.Parameters.AddWithValue(token ?? "");
-    await using var reader = await command.ExecuteReaderAsync();
-    var notifications = new List<object>();
-    while (await reader.ReadAsync()) notifications.Add(new { id = reader.GetInt64(0), title = reader.GetString(1), body = reader.GetString(2), targetUrl = reader.GetString(3), date = reader.GetString(4), isPersonal = reader.GetBoolean(5) });
-    return Results.Ok(notifications);
 });
 
 app.MapGet("/api/public/league", async (string? month, NpgsqlDataSource db) =>
@@ -578,9 +544,7 @@ api.MapGet("/analytics", async (NpgsqlDataSource db) =>
         await using var command = new NpgsqlCommand(sql, connection);
         return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
-    string startedAt;
-    await using (var startCommand = new NpgsqlCommand("select coalesce(min(event_date),current_date)::text from (select min(attendance_date) event_date from attendance_records union all select min(visit_date) from visit_records union all select min(week_start) from call_records) dates", connection))
-        startedAt = (string)(await startCommand.ExecuteScalarAsync())!;
+    var startedAt = attendanceStartDate.ToString("yyyy-MM-dd");
     var boys = await Scalar("select count(*) from people where is_active=true and role='boy'");
     var servants = await Scalar("select count(*) from people where is_active=true and role='servant'");
     var choirAttendance = await Scalar("select count(*) from attendance_records a join people p on p.id=a.person_id where p.is_active=true and p.role='boy' and a.attendance_type='choir'");
@@ -592,11 +556,11 @@ api.MapGet("/analytics", async (NpgsqlDataSource db) =>
 
     var monthly = new List<object>();
     await using (var command = new NpgsqlCommand(@"
-        select month,to_char(month,'YYYY-MM'),sum(choir),sum(mass),sum(visits),sum(calls) from (
-          select date_trunc('month',a.attendance_date)::date month,count(*) filter(where a.attendance_type='choir') choir,count(*) filter(where a.attendance_type='mass') mass,0 visits,0 calls from attendance_records a join people p on p.id=a.person_id where p.is_active=true and p.role='boy' group by 1
+        select month_key,to_char(month_key,'YYYY-MM'),sum(choir),sum(mass),sum(visits),sum(calls) from (
+          select date_trunc('month',a.attendance_date)::date month_key,count(*) filter(where a.attendance_type='choir') choir,count(*) filter(where a.attendance_type='mass') mass,0 visits,0 calls from attendance_records a join people p on p.id=a.person_id where p.is_active=true and p.role='boy' group by 1
           union all select date_trunc('month',v.visit_date)::date,0,0,count(*),0 from visit_records v join people p on p.id=v.person_id where p.is_active=true and p.role='boy' group by 1
           union all select date_trunc('month',c.week_start)::date,0,0,0,count(*) from call_records c group by 1
-        ) activity group by month order by month", connection))
+        ) activity group by month_key order by month_key", connection))
     await using (var reader = await command.ExecuteReaderAsync())
         while (await reader.ReadAsync()) monthly.Add(new { month = reader.GetString(1), choir = reader.GetInt64(2), mass = reader.GetInt64(3), visits = reader.GetInt64(4), calls = reader.GetInt64(5) });
 
@@ -859,7 +823,7 @@ api.MapGet("/visit-reports", async (int? year, string? month, NpgsqlDataSource d
 
 api.MapGet("/history/{personId:long}", async (long personId, NpgsqlDataSource db) =>
 {
-    var attendanceStart = new DateOnly(2026, 10, 2);
+    var attendanceStart = attendanceStartDate;
     var attendanceThrough = CairoToday();
     await using var connection = await db.OpenConnectionAsync();
     await using var personCommand = new NpgsqlCommand("select id, record_key, name, note, phone1, group_number, address, photo_url from people where id=$1", connection);
@@ -917,54 +881,6 @@ api.MapPost("/attendance", async (AttendanceSave payload, NpgsqlDataSource db) =
     { delete.Parameters.AddWithValue(attendanceType); delete.Parameters.AddWithValue(attendanceDate); delete.Parameters.AddWithValue(checksJson); await delete.ExecuteNonQueryAsync(); }
     await transaction.CommitAsync();
     return Results.Ok(new { type = attendanceType, date = attendanceDate.ToString("yyyy-MM-dd") });
-});
-
-api.MapGet("/evaluations", async (string? date, NpgsqlDataSource db) =>
-{
-    var evaluationDate = ParseDate(date, CairoToday());
-    await using var connection = await db.OpenConnectionAsync();
-    await using var command = new NpgsqlCommand(@"
-        select p.record_key,p.name,e.points
-        from attendance_records a
-        join people p on p.id=a.person_id
-        left join choir_evaluations e on e.person_id=a.person_id and e.attendance_date=a.attendance_date
-        where a.attendance_type='choir' and a.attendance_date=$1 and p.is_active=true and p.role='boy'
-        order by p.name", connection);
-    command.Parameters.AddWithValue(evaluationDate);
-    await using var reader = await command.ExecuteReaderAsync();
-    var people = new List<object>();
-    while (await reader.ReadAsync()) people.Add(new { recordKey = reader.GetInt32(0), name = reader.GetString(1), points = reader.IsDBNull(2) ? (int?)null : reader.GetInt32(2) });
-    return Results.Ok(new { date = evaluationDate.ToString("yyyy-MM-dd"), people });
-});
-
-api.MapPost("/evaluations", async (EvaluationSave payload, NpgsqlDataSource db) =>
-{
-    var evaluationDate = ParseDate(payload.Date, CairoToday());
-    var scores = payload.Scores ?? new Dictionary<string, int>();
-    if (scores.Values.Any(score => score is < 0 or > 10)) return Results.BadRequest(new { error = "التقييم يجب أن يكون من صفر إلى 10" });
-    var scoresJson = JsonSerializer.Serialize(scores);
-    await using var connection = await db.OpenConnectionAsync();
-    await using var command = new NpgsqlCommand(@"
-        with changed as (
-          insert into choir_evaluations(person_id,attendance_date,points)
-        select p.id,$1,e.value::integer
-        from jsonb_each_text($2::jsonb) e
-        join people p on p.record_key=e.key::integer and p.is_active=true and p.role='boy'
-        join attendance_records a on a.person_id=p.id and a.attendance_type='choir' and a.attendance_date=$1
-        where e.value::integer between 0 and 10
-          on conflict(person_id,attendance_date) do update set points=excluded.points,updated_at=now()
-          where choir_evaluations.points is distinct from excluded.points
-          returning person_id,points
-        )
-        insert into parent_notifications(person_id,title,body,target_url,event_key)
-        select p.id,'تمت إضافة تقييم جديد',p.name || ' حصل على ' || changed.points::text || ' من 10 نقاط في تقييم الخورس.', '/qr/' || p.qr_token || '#grades', 'evaluation:' || p.id::text || ':' || $1::text
-        from changed join people p on p.id=changed.person_id
-        on conflict(event_key) where event_key is not null do update
-        set title=excluded.title,body=excluded.body,target_url=excluded.target_url,created_at=now()", connection);
-    command.Parameters.AddWithValue(evaluationDate);
-    command.Parameters.AddWithValue(scoresJson);
-    var saved = await command.ExecuteNonQueryAsync();
-    return Results.Ok(new { date = evaluationDate.ToString("yyyy-MM-dd"), saved });
 });
 
 api.MapPost("/attendance-comment", async (AttendanceCommentSave payload, NpgsqlDataSource db) =>

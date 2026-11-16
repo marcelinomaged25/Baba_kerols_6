@@ -37,7 +37,11 @@ import {
   X,
 } from "lucide-react";
 
-const apiUrl = (import.meta.env.VITE_API_URL || "https://abanob-mngm.onrender.com").replace(/\/$/, "");
+const apiUrl = (import.meta.env.VITE_API_URL || "http://localhost:5080").replace(/\/$/, "");
+const choirName = import.meta.env.VITE_CHOIR_NAME || "خورس البابا كيرلس السادس";
+const churchName = import.meta.env.VITE_CHURCH_NAME || "كنيسة القديس البابا كيرلس السادس";
+const logoUrl = import.meta.env.VITE_LOGO_URL || "/choir-logo.webp";
+const attendanceStartDate = import.meta.env.VITE_ATTENDANCE_START_DATE || "2026-11-20";
 const forecastUrl = (import.meta.env.VITE_FORECAST_URL || "").replace(/\/$/, "");
 const today = () => {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -49,7 +53,7 @@ const today = () => {
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
 };
-const fridaySessionsSinceStart = (startDate = "2026-10-16") => {
+const fridaySessionsSinceStart = (startDate = attendanceStartDate) => {
   const start = new Date(`${startDate}T12:00:00`);
   const end = new Date(`${today()}T12:00:00`);
   let sessions = 0;
@@ -194,8 +198,8 @@ function PersonAvatar({ person, name, size = "small" }) {
 }
 const publicQrToken = window.location.pathname.match(/^\/qr\/([^/]+)\/?$/)?.[1] || "";
 const isAdminPage = window.location.pathname === "/admin" || window.location.pathname.startsWith("/admin/");
-const isLearningPage = window.location.pathname === "/learning" || window.location.pathname === "/learning/";
-const isBooksPage = window.location.pathname === "/books" || window.location.pathname === "/books/";
+const isLearningPage = false;
+const isBooksPage = false;
 const isMassSchedulePage =
   window.location.pathname === "/mass-schedule" || window.location.pathname === "/mass-schedule/";
 
@@ -721,7 +725,7 @@ export default function App() {
       setEditingPerson(null);
       setPersonDraft(emptyPerson);
     }
-    if (nextMode === "notifications" || nextMode === "evaluation" || nextMode === "content-admin") return;
+    if (nextMode === "notifications" || nextMode === "evaluation" || nextMode === "content-admin" || nextMode === "learning-admin" || nextMode === "books-admin") return;
     if (nextMode === "attendance") load(nextMode, attendanceDate);
     else if (nextMode === "home" || nextMode === "stray") load(nextMode, dashboardDate);
     else if (nextMode === "reports" || nextMode === "analytics" || nextMode === "learning-admin" || nextMode === "books-admin" || nextMode === "mass-admin")
@@ -1001,11 +1005,7 @@ export default function App() {
   }
 
   if (publicQrToken) return <PublicAttendancePage token={publicQrToken} />;
-  if (isLearningPage) return <PublicLearningPage />;
-  if (isBooksPage) return <PublicBooksPage />;
   if (isMassSchedulePage) return <PublicMassSchedulePage />;
-  if (window.location.pathname === "/life-of-saint-abanoub") return <SaintAbanoubStoryPage />;
-  if (window.location.pathname === "/league") return <PublicLeaguePage />;
   if (!isAdminPage) return <PublicParentHome />;
   if (!password || !username)
     return (
@@ -1013,10 +1013,10 @@ export default function App() {
         <PublicNavigation subtitle="دخول الخدام" />
         <form className="login-panel" onSubmit={login}>
           <div className="login-brand">
-            <img src="/saint-abanoub.png" alt="القديس أبانوب" />
+            <img src={logoUrl} alt={choirName} />
           </div>
-          <p className="eyebrow">خورس القديس أبانوب</p>
-          <h1>خورس القديس أبانوب</h1>
+          <p className="eyebrow">{choirName}</p>
+          <h1>{choirName}</h1>
           <label htmlFor="app-username">اسم المستخدم</label>
           <input
             id="app-username"
@@ -1076,9 +1076,9 @@ export default function App() {
         aria-label="قائمة صفحات الإدارة"
       >
         <div className="sidebar-brand">
-          <img src="/saint-abanoub.png" alt="القديس أبانوب" />
+          <img src={logoUrl} alt={choirName} />
           <div>
-            <strong>خورس القديس أبانوب</strong>
+            <strong>{choirName}</strong>
             <span>إدارة الخدمة</span>
           </div>
           <button
@@ -1095,34 +1095,10 @@ export default function App() {
           {navItem("home", <LayoutDashboard size={17} />, "نظرة عامة")}
           {navItem("attendance", <UserCheck size={17} />, "الحضور والغياب")}
           {navItem("visit", <Home size={17} />, "الافتقاد")}
-          {navItem("stray", <img className="sheep-icon" src="/sheep-icon.svg" alt="" />, "الخروف الضال")}
           {navItem("history", <Users size={17} />, "أفراد الخورس")}
           {navItem("people", <Pencil size={17} />, "إدارة الخورس")}
-          {navItem("content-admin", <BookOpen size={17} />, "إدارة المناهج والقداسات")}
-          {navItem("evaluation", <Star size={17} />, "تقييم الأولاد")}
+          {navItem("mass-admin", <CalendarDays size={17} />, "إدارة القداسات")}
           {navItem("qr-print", <QrCode size={17} />, "QR الأولاد")}
-          <button
-            className={`sidebar-item notification-item ${mode === "notifications" ? "active" : ""}`}
-            type="button"
-            onClick={() => {
-              setMobileNavOpen(false);
-              openNotifications();
-            }}
-            title={
-              notificationPermission === "granted"
-                ? "مركز التنبيهات · إشعارات المتصفح مفعّلة"
-                : "مركز التنبيهات · تفعيل إشعارات المتصفح"
-            }
-          >
-            <Bell size={17} />
-            <span>التنبيهات</span>
-            {unreadNotificationCount > 0 && (
-              <b className="notification-count">
-                {Math.min(99, unreadNotificationCount)}
-                {unreadNotificationCount > 99 ? "+" : ""}
-              </b>
-            )}
-          </button>
           {navItem("analytics", <BarChart3 size={17} />, "تحليلات الخدمة")}
         </nav>
         <div className="sidebar-footer">
@@ -1150,9 +1126,9 @@ export default function App() {
       <section className="app-content">
         <div className="mobile-app-header">
           <div className="mobile-brand">
-            <img src="/saint-abanoub.png" alt="القديس أبانوب" />
+            <img src={logoUrl} alt={choirName} />
             <div>
-              <strong>خورس القديس أبانوب</strong>
+              <strong>{choirName}</strong>
               <span>إدارة الخدمة</span>
             </div>
           </div>
@@ -1318,7 +1294,7 @@ export default function App() {
             setQuery={setQuery}
           />
         )}
-        {mode === "evaluation" && <ServantBoyEvaluationPage request={request} />}
+        {false && mode === "evaluation" && <ServantBoyEvaluationPage request={request} />}
         {(mode === "qr" || mode === "qr-print") && (
           <QrManagementPage
             rows={state.rows}
@@ -1365,8 +1341,8 @@ export default function App() {
             }}
           />
         )}
-        {mode === "content-admin" && <ContentManagementChooser onChoose={switchMode} />}
-        {mode === "learning-admin" && (
+        {false && mode === "content-admin" && <ContentManagementChooser onChoose={switchMode} />}
+        {false && mode === "learning-admin" && (
           <LearningManagementPage
             items={learningItems}
             request={request}
@@ -1374,7 +1350,7 @@ export default function App() {
             onBack={() => switchMode("content-admin")}
           />
         )}
-        {mode === "books-admin" && (
+        {false && mode === "books-admin" && (
           <BooksManagementPage
             items={books}
             request={request}
@@ -2785,61 +2761,19 @@ function PublicNavigation({ subtitle, homeActions }) {
           </a>
         </section>
         <section className="public-menu-section">
-          <p>المخدومين</p>
-          <a href="/league">
-            <Trophy size={18} />
-            <span>دوري أبانوب</span>
-            <ChevronLeft size={17} />
-          </a>
-          <a href="/life-of-saint-abanoub">
-            <img className="public-saint-menu-icon" src="/saint-abanoub-menu-icon.png" alt="" />
-            <span>حياة القديس أبانوب</span>
-            <ChevronLeft size={17} />
-          </a>
-          <a href="/learning">
-            <BookOpen size={18} />
-            <span>إحنا اتعلمنا إيه؟</span>
-            <ChevronLeft size={17} />
-          </a>
+          <p>الخدمة</p>
           <a href="/mass-schedule">
             <Church size={18} />
             <span>اعرف قداسك إمتى</span>
             <ChevronLeft size={17} />
           </a>
         </section>
-        <section className="public-menu-section">
-          <p>التعليم</p>
-          <a href="https://stgeorgesaman.com/coptic/" target="_blank" rel="noreferrer">
-            <Languages size={18} />
-            <span>اللغة القبطية</span>
-            <ExternalLink size={15} />
-          </a>
-          <a href="https://stgeorgesaman.com/libraries/hymns-library/" target="_blank" rel="noreferrer">
-            <Music2 size={18} />
-            <span>الألحان</span>
-            <ExternalLink size={15} />
-          </a>
-          <a
-            href="https://drive.google.com/file/d/1KINWJOvsqfj-I8X7k6cOu1toDTW-SXSu/view?usp=drive_link"
-            target="_blank"
-            rel="noreferrer"
-          >
-            <Church size={18} />
-            <span>الطقس</span>
-            <ExternalLink size={15} />
-          </a>
-          <a href="/books">
-            <BookOpen size={18} />
-            <span>كتب</span>
-            <ChevronLeft size={17} />
-          </a>
-        </section>
       </aside>
       <header className="global-brand-header public-site-header">
         <a className="global-brand" href="/" aria-label="العودة للصفحة الرئيسية">
-          <img src="/saint-abanoub.png" alt="" />
+          <img src={logoUrl} alt={choirName} />
           <span>
-            <strong>خورس القديس أبانوب</strong>
+            <strong>{choirName}</strong>
             <small>{subtitle}</small>
           </span>
         </a>
@@ -2916,7 +2850,7 @@ function PublicParentHome() {
         homeActions={<ParentNotificationCenter childToken={childToken} header />}
       />
       <section className="public-home-content">
-        <img className="public-home-saint" src="/saint-abanoub.png" alt="القديس أبانوب" />
+        <img className="public-home-saint" src={logoUrl} alt={choirName} />
         <p className="section-kicker">أهلًا بكم</p>
         <h1>تابع حضور ابنك</h1>
         <p className="public-home-copy">اكتب اسم الابن للوصول إلى تقرير حضور الخورس والقداس.</p>
@@ -3379,9 +3313,6 @@ function PublicAttendancePage({ token }) {
           >
             <MessageCircle size={18} /> طلب متابعة
           </button>
-          <a className="public-rank-button" href={`/league?name=${encodeURIComponent(data.person.name)}`}>
-            <Trophy size={18} /> اعرف ترتيبي
-          </a>
         </div>
       </section>
       {showServants && (
@@ -4377,7 +4308,7 @@ function HomeDashboard({
       <div className="dashboard-hero">
         <div>
           <p className="section-kicker">لوحة حضور اليوم</p>
-          <h2>اجتماع خورس القديس أبانوب</h2>
+          <h2>اجتماع {choirName}</h2>
           <p>اختر التاريخ لمراجعة حضور الخورس والقداس.</p>
         </div>
         <div className="hero-date">
@@ -4389,7 +4320,7 @@ function HomeDashboard({
               onChange={(event) => setDashboardDate(event.target.value)}
             />
           </label>
-          <img src="/saint-abanoub.png" alt="القديس أبانوب" />
+          <img src={logoUrl} alt={choirName} />
         </div>
       </div>
       <div className="dashboard-metrics">
@@ -5598,7 +5529,7 @@ function MembersDirectoryByRole({ rows, query, setQuery, openReport, loading }) 
   const [servantUnlocked, setServantUnlocked] = useState(false);
   const [servantPasswordError, setServantPasswordError] = useState(false);
   const scopedRows = rows.filter((row) => (row.role || "boy") === scope);
-  const attendanceSessions = fridaySessionsSinceStart(scope === "servant" ? "2026-10-16" : "2026-10-02");
+  const attendanceSessions = fridaySessionsSinceStart(attendanceStartDate);
   const statRows =
     scope === "servant"
       ? scopedRows.map((row) => ({
@@ -6235,7 +6166,7 @@ function ReportModal({ report, close }) {
         )}
         {summary && (
           <>
-            <p className="report-period">الحضور والغياب من ٢ أكتوبر ٢٠٢٦ · {summary.expectedFridays} جمعات</p>
+            <p className="report-period">الحضور والغياب من الجمعة ٢٠ نوفمبر ٢٠٢٦ · {summary.expectedFridays} جمعات</p>
             <div className="report-summary attendance-report-summary">
               <span>
                 حضور الخورس: <strong>{summary.choirPresent}</strong>
