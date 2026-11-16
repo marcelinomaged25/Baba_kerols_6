@@ -20,6 +20,15 @@ if not database_url:
 
 with psycopg.connect(database_url) as connection:
     with connection.cursor() as cursor:
+        cursor.execute("select number from groups order by display_order")
+        groups = [row[0] for row in cursor.fetchall()]
+        if not groups:
+            groups = ["1", "2", "3"]
+            for order, group in enumerate(groups, start=1):
+                cursor.execute(
+                    "insert into groups(number, display_order) values (%s, %s) on conflict (number) do nothing",
+                    (group, order),
+                )
         for index, child in enumerate(children, start=1):
             note_parts = [
                 f"المرحلة: {child.get('school_grade') or ''}",
@@ -31,16 +40,16 @@ with psycopg.connect(database_url) as connection:
             cursor.execute(
                 """
                 insert into people
-                  (record_key, name, note, phone1, phone2, address, role, is_active)
-                values (%s, %s, %s, %s, %s, %s, 'boy', true)
+                  (record_key, name, note, phone1, phone2, address, group_number, role, is_active)
+                values (%s, %s, %s, %s, %s, %s, %s, 'boy', true)
                 on conflict (record_key) do update set
                   name=excluded.name, note=excluded.note, phone1=excluded.phone1,
                   phone2=excluded.phone2, address=excluded.address,
-                  role='boy', is_active=true, updated_at=now()
+                  group_number=excluded.group_number, role='boy', is_active=true, updated_at=now()
                 """,
                 (index, child.get("name", "").strip(), "\n".join(note_parts),
                  child.get("father_phone") or "", child.get("mother_phone") or "",
-                 child.get("address") or ""),
+                 child.get("address") or "", groups[(index - 1) % len(groups)]),
             )
 
         for index, servant in enumerate(servants, start=1):
