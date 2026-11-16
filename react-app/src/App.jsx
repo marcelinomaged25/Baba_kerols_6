@@ -3483,27 +3483,33 @@ function PublicAttendancePage({ token }) {
         <div className="public-section-heading">
           <div>
             <p className="section-kicker">السجل التفصيلي</p>
-            <h2>مواعيد الحضور</h2>
+            <h2>متابعة الجمعات</h2>
           </div>
-          <span>التاريخ والساعة</span>
+          <span>الحضور والافتقاد</span>
         </div>
         <div className="public-history-list">
-          {data.attendance.map((item) => (
-            <article key={`${item.type}-${item.date}-${item.recordedAt}`}>
-              <span className={`public-type ${item.type === "choir" ? "choir" : "mass"}`}>
-                {item.type === "choir" ? "خورس" : "قداس"}
-              </span>
-              <div>
+          {(data.detailedHistory || []).map((item) => (
+            <article className="public-detailed-row" key={item.date}>
+              <div className="public-detailed-date">
                 <strong>{dateLabel(item.date)}</strong>
-                <small>{publicTimeLabel(item.recordedAt)}</small>
+                <small>{new Intl.DateTimeFormat("ar-EG", { weekday: "long" }).format(new Date(`${item.date}T12:00:00`))}</small>
               </div>
+              <ReportStatus label="خورس" active={item.choir} />
+              <ReportStatus label="قداس" active={item.mass} />
+              <ReportStatus label="زيارة" active={item.visit} />
+              <ReportStatus label="اتصال" active={item.call} />
+              <span className="public-detailed-note">{item.note || "—"}</span>
             </article>
           ))}
-          {!data.attendance.length && <p className="empty-row">لا توجد تسجيلات حضور حتى الآن</p>}
+          {!(data.detailedHistory || []).length && <p className="empty-row">لا توجد تسجيلات حضور حتى الآن</p>}
         </div>
       </section>
     </main>
   );
+}
+
+function ReportStatus({ label, active }) {
+  return <span className={`public-report-status ${active ? "is-active" : "is-empty"}`}><i />{active ? label === "زيارة" || label === "اتصال" ? "تم" : "حضر" : "—"}</span>;
 }
 
 function PublicMetric({ label, value, absent, rate }) {

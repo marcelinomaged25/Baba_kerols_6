@@ -98,6 +98,24 @@ app.MapGet("/api/public/qr/{token}", async (string token, NpgsqlDataSource db) =
         await using var attendanceReader = await attendanceCommand.ExecuteReaderAsync();
         while (await attendanceReader.ReadAsync()) attendance.Add(new PublicAttendanceItem(attendanceReader.GetString(0), attendanceReader.GetString(1), $"{attendanceReader.GetString(2)}|{attendanceReader.GetString(3)}", attendanceReader.GetString(3)));
     }
+    var detailedHistory = new List<object>();
+    await using (var historyCommand = new NpgsqlCommand(@"
+        select d.session_date::text,
+               exists(select 1 from attendance_records a where a.person_id=$1 and a.attendance_type='choir' and a.attendance_date=d.session_date),
+               exists(select 1 from attendance_records a where a.person_id=$1 and a.attendance_type='mass' and a.attendance_date=d.session_date),
+               exists(select 1 from visit_records v where v.person_id=$1 and v.visit_date=d.session_date),
+               exists(select 1 from call_records c where c.person_id=$1 and c.week_start=d.session_date),
+               coalesce((select string_agg(nullif(n.note,''), ' / ' order by n.created_at desc) from followup_notes n where n.person_id=$1 and n.note_date=d.session_date), '')
+        from generate_series($2::date, $3::date, interval '7 days') d(session_date)
+        order by d.session_date desc", connection))
+    {
+        historyCommand.Parameters.AddWithValue(personId);
+        historyCommand.Parameters.AddWithValue(attendanceStart);
+        historyCommand.Parameters.AddWithValue(attendanceThrough);
+        await using var historyReader = await historyCommand.ExecuteReaderAsync();
+        while (await historyReader.ReadAsync())
+            detailedHistory.Add(new { date = historyReader.GetString(0), choir = historyReader.GetBoolean(1), mass = historyReader.GetBoolean(2), visit = historyReader.GetBoolean(3), call = historyReader.GetBoolean(4), note = historyReader.GetString(5) });
+    }
     var sessionTotals = new Dictionary<string, int>();
     for (var session = attendanceStart; session <= attendanceThrough; session = session.AddDays(7))
         sessionTotals[session.ToString("yyyy-MM")] = sessionTotals.GetValueOrDefault(session.ToString("yyyy-MM")) + 1;
@@ -140,7 +158,7 @@ app.MapGet("/api/public/qr/{token}", async (string token, NpgsqlDataSource db) =
             servants.Add(new { id = servantReader.GetInt64(0), name = servantReader.GetString(1), phone1, phone2, choirStatus = servantReader.GetString(4) });
         }
     }
-    return Results.Ok(new { person = ratedPerson, attendance, monthly, followUpRequests = requests, servants });
+    return Results.Ok(new { person = ratedPerson, attendance, detailedHistory, monthly, followUpRequests = requests, servants });
 });
 
 app.MapPost("/api/public/qr/{token}/followup-request", async (string token, FollowUpRequestSave payload, NpgsqlDataSource db) =>
