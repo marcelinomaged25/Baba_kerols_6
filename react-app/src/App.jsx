@@ -844,7 +844,7 @@ export default function App() {
     }));
   }
 
-  async function saveFollowUp(assign = false, groupFilter = "") {
+  async function saveFollowUp(assign = false, groupFilter = "", servantsOverride = null) {
     if (typeof assign === "string") {
       groupFilter = assign;
       assign = false;
@@ -870,8 +870,7 @@ export default function App() {
             .filter((row) => row.role !== "servant" && (!groupFilter || row.group === groupFilter))
             .map((row) => [row.recordKey, row.called === true]),
         );
-        const servants = servantsText
-          .split(/\r?\n/)
+        const servants = (servantsOverride || servantsText.split(/\r?\n/))
           .map((name) => name.trim())
           .filter(Boolean);
         result = await request("/api/calls", {
@@ -4682,8 +4681,11 @@ function FollowUpDashboard({
     const current = servantList;
     if (!current.includes(next)) setServantsText(splitServants([...current, next].join("\n")).join("\n"));
   };
-  const removeServant = (name) =>
-    setServantsText(splitServants(servantList.filter((item) => item !== name).join("\n")).join("\n"));
+  const removeServant = (name) => {
+    const next = splitServants(servantList.filter((item) => item !== name).join("\n"));
+    setServantsText(next.join("\n"));
+    if (next.length) saveFollowUp(true, "", next);
+  };
   return (
     <>
       {mode === "call" && (
