@@ -189,15 +189,20 @@ internal static class ApiHelpers
     internal static async Task EnsureGroupSeriesAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, int requiredCount)
     {
         if (requiredCount <= 0) return;
-        await using var countCommand = new NpgsqlCommand("select count(*) from groups", connection, transaction);
-        var existingCount = (long)(await countCommand.ExecuteScalarAsync() ?? 0L);
-        if (existingCount >= requiredCount) return;
-        await using var insert = new NpgsqlCommand(@"insert into groups(number, display_order)
-            select x::text, x from generate_series($1, $2) x
-            on conflict (number) do nothing", connection, transaction);
-        insert.Parameters.AddWithValue(existingCount + 1);
-        insert.Parameters.AddWithValue(requiredCount);
-        await insert.ExecuteNonQueryAsync();
+        while (true)
+        {
+            await using var countCommand = new NpgsqlCommand("select count(*), coalesce(max(display_order),0) from groups", connection, transaction);
+            await using var reader = await countCommand.ExecuteReaderAsync();
+            await reader.ReadAsync();
+            var count = reader.GetInt64(0);
+            var maxOrder = reader.GetInt32(1);
+            await reader.CloseAsync();
+            if (count >= requiredCount) break;
+            await using var insert = new NpgsqlCommand("insert into groups(number, display_order) values($1,$2) on conflict (number) do nothing", connection, transaction);
+            insert.Parameters.AddWithValue((maxOrder + 1).ToString());
+            insert.Parameters.AddWithValue(maxOrder + 1);
+            await insert.ExecuteNonQueryAsync();
+        }
     }
 
     internal static async Task<List<string>> LoadGroupNumbersAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction = null)
@@ -291,6 +296,22 @@ internal static class ApiHelpers
             update.Parameters.AddWithValue(destination); update.Parameters.AddWithValue(personId);
             await update.ExecuteNonQueryAsync();
             destinationCounts[destination]++;
+        }
+    }
+
+    internal static async Task RedistributeAllBoysEvenlyAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, IReadOnlyList<string> groups)
+    {
+        if (groups.Count == 0) return;
+        var ids = new List<long>();
+        await using (var command = new NpgsqlCommand("select id from people where is_active=true and role='boy' order by record_key", connection, transaction))
+        await using (var reader = await command.ExecuteReaderAsync())
+            while (await reader.ReadAsync()) ids.Add(reader.GetInt64(0));
+        for (var index = 0; index < ids.Count; index++)
+        {
+            await using var update = new NpgsqlCommand("update people set group_number=$1,updated_at=now() where id=$2", connection, transaction);
+            update.Parameters.AddWithValue(groups[index % groups.Count]);
+            update.Parameters.AddWithValue(ids[index]);
+            await update.ExecuteNonQueryAsync();
         }
     }
 
