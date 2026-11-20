@@ -4666,7 +4666,7 @@ function FollowUpDashboard({
     () => [
       ...new Set(
         [
-          ...(state.servants || []),
+          ...(state.availableServants || []),
           ...(state.rows || []).filter((row) => (row.role || "boy") === "servant").map((row) => row.name),
         ]
           .map(canonicalServantName)

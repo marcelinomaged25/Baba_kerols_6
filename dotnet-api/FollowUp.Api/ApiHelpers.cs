@@ -96,7 +96,7 @@ internal static class ApiHelpers
         var groupStates = groups.Select(group => new { number = group.Number, members = group.Members, recordKeys = group.RecordKeys, servant = savedAssignments.GetValueOrDefault(group.Number) ?? autoAssignments.GetValueOrDefault(group.Number) ?? "" }).ToArray();
         var weekEnd = week.AddDays(6);
         var monthTotal = people.Count(person => person.Role == "boy");
-        return new { rows, groups = groupStates, servants = mode == "call" ? selectedServants : Array.Empty<string>(), monthVisitedCount = visitedThisMonth.Count, monthTotal, rotationStart = rotation.ToString("yyyy-MM-dd"), distributionNotStarted, selectedDate = date.ToString("yyyy-MM-dd"), selectedWeek = week.ToString("yyyy-MM-dd"), weekEnd = weekEnd.ToString("yyyy-MM-dd"), verse, historySummary = rows.Select(row => new { row.recordKey, row.lastVisitedDate, row.lastCalledWeek, row.lastCaller }).ToArray() };
+        return new { rows, groups = groupStates, servants = mode == "call" ? selectedServants : Array.Empty<string>(), availableServants = mode == "call" ? availableServants : Array.Empty<string>(), monthVisitedCount = visitedThisMonth.Count, monthTotal, rotationStart = rotation.ToString("yyyy-MM-dd"), distributionNotStarted, selectedDate = date.ToString("yyyy-MM-dd"), selectedWeek = week.ToString("yyyy-MM-dd"), weekEnd = weekEnd.ToString("yyyy-MM-dd"), verse, historySummary = rows.Select(row => new { row.recordKey, row.lastVisitedDate, row.lastCalledWeek, row.lastCaller }).ToArray() };
     }
 
     internal static bool ValidLearningItem(LearningItemSave payload, out DateOnly date, out string error)
