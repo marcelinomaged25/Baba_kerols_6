@@ -4768,6 +4768,14 @@ function FollowUpDashboard({
             <div className="field-hint">
               إضافة الخادم تتم من إدارة الخورس فقط، ثم يظهر هنا للاختيار. لا يتكرر الاسم في القائمة.
             </div>
+            <button
+              type="button"
+              className="primary-button distribution-save-button"
+              disabled={busy || servantList.length === 0}
+              onClick={() => saveFollowUp(true)}
+            >
+              ↻ توزيع الخدام على الجروبات
+            </button>
           </article>
         )}
         {(mode === "visit" || (mode === "call" && openCallPanel === "rotation")) && (

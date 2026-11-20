@@ -12059,6 +12059,11 @@ input[type="date"]:focus {
 .public-report-status.is-active { color: #087f65; background: #dff6ec; }
 .public-report-status.is-empty { color: #8aa0b6; background: #eef3f8; }
 .public-detailed-note { color: #21364a; font-size: .9rem; }
+.distribution-save-button {
+  width: 100%;
+  margin-top: 14px;
+  justify-content: center;
+}
 @media (max-width: 800px) {
   .public-detailed-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .public-detailed-date { grid-column: 1 / -1; }
