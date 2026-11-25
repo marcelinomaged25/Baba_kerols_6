@@ -1050,6 +1050,10 @@ api.MapPost("/calls", async (CallSave payload, NpgsqlDataSource db) =>
         await using var clearAssignments = new NpgsqlCommand("delete from call_assignments where week_start=$1", connection, transaction);
         clearAssignments.Parameters.AddWithValue(week);
         await clearAssignments.ExecuteNonQueryAsync();
+        var monthStart = new DateOnly(week.Year, week.Month, 1);
+        await using var clearMonthlyAssignments = new NpgsqlCommand("delete from monthly_call_assignments where month_start=$1", connection, transaction);
+        clearMonthlyAssignments.Parameters.AddWithValue(monthStart);
+        await clearMonthlyAssignments.ExecuteNonQueryAsync();
         await using var clearCalls = new NpgsqlCommand("delete from call_records where week_start=$1", connection, transaction);
         clearCalls.Parameters.AddWithValue(week);
         await clearCalls.ExecuteNonQueryAsync();
@@ -1133,12 +1137,17 @@ api.MapPost("/calls", async (CallSave payload, NpgsqlDataSource db) =>
 
     // Persist every displayed weekly assignment before writing call records.
     // Auto-assigned groups must still carry their servant into call_records.
-    var displayedAssignments = Assignments(groups, servants, week, rotationStart);
+    var displayedAssignments = existingAssignments.Count > 0
+        ? existingAssignments
+        : Assignments(groups, servants, week, rotationStart);
+    // Materialize the stable monthly assignment for this week so weekly
+    // call-record joins continue to resolve the servant correctly.
+    foreach (var item in displayedAssignments)
+        await UpsertAssignmentAsync(connection, transaction, week, item.Key, item.Value);
     foreach (var item in displayedAssignments)
     {
         if (!existingAssignments.ContainsKey(item.Key))
         {
-            await UpsertAssignmentAsync(connection, transaction, week, item.Key, item.Value);
             existingAssignments[item.Key] = item.Value;
         }
     }

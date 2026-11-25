@@ -220,11 +220,12 @@ internal static class ApiHelpers
     internal static async Task<Dictionary<string, string>> LoadWeekAssignmentsAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, DateOnly week)
     {
         var assignments = new Dictionary<string, string>(StringComparer.Ordinal);
-        var commandText = "select group_number, servant from call_assignments where week_start=$1";
+        var month = new DateOnly(week.Year, week.Month, 1);
+        var commandText = "select group_number, servant from monthly_call_assignments where month_start=$1 order by group_number";
         await using var command = transaction is null
             ? new NpgsqlCommand(commandText, connection)
             : new NpgsqlCommand(commandText, connection, transaction);
-        command.Parameters.AddWithValue(week);
+        command.Parameters.AddWithValue(month);
         await using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
@@ -359,6 +360,12 @@ internal static class ApiHelpers
 
     internal static async Task UpsertAssignmentAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, DateOnly week, string groupNumber, string servant)
     {
+        var month = new DateOnly(week.Year, week.Month, 1);
+        await using var monthly = new NpgsqlCommand("insert into monthly_call_assignments(month_start,group_number,servant) values($1,$2,$3) on conflict (month_start,group_number) do update set servant=excluded.servant, assigned_at=now()", connection, transaction);
+        monthly.Parameters.AddWithValue(month);
+        monthly.Parameters.AddWithValue(groupNumber);
+        monthly.Parameters.AddWithValue(CanonicalServantName(servant));
+        await monthly.ExecuteNonQueryAsync();
         await using var assign = new NpgsqlCommand("insert into call_assignments(week_start,group_number,servant) values($1,$2,$3) on conflict (week_start,group_number) do update set servant=excluded.servant, assigned_at=now()", connection, transaction);
         assign.Parameters.AddWithValue(week);
         assign.Parameters.AddWithValue(groupNumber);
@@ -372,6 +379,11 @@ internal static class ApiHelpers
         command.Parameters.AddWithValue(week);
         command.Parameters.AddWithValue(groupNumber);
         await command.ExecuteNonQueryAsync();
+        var month = new DateOnly(week.Year, week.Month, 1);
+        await using var monthly = new NpgsqlCommand("delete from monthly_call_assignments where month_start=$1 and group_number=$2", connection, transaction);
+        monthly.Parameters.AddWithValue(month);
+        monthly.Parameters.AddWithValue(groupNumber);
+        await monthly.ExecuteNonQueryAsync();
     }
 
     internal static string CanonicalServantName(string? value)
